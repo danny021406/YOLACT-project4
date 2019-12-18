@@ -54,6 +54,10 @@ COCO_LABEL_MAP = { 1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8
                   74: 65, 75: 66, 76: 67, 77: 68, 78: 69, 79: 70, 80: 71, 81: 72,
                   82: 73, 84: 74, 85: 75, 86: 76, 87: 77, 88: 78, 89: 79, 90: 80}
 
+PASCAL_CLASSES = ("aeroplane", "bicycle", "bird", "boat", "bottle",
+                  "bus", "car", "cat", "chair", "cow", "diningtable",
+                  "dog", "horse", "motorbike", "person", "pottedplant",
+                  "sheep", "sofa", "train", "tvmonitor")
 
 
 # ----------------------- CONFIG CLASS ----------------------- #
@@ -109,12 +113,12 @@ dataset_base = Config({
     'name': 'Base Dataset',
 
     # Training images and annotations
-    'train_images': './data/coco/images/',
-    'train_info':   'path_to_annotation_file',
+    'train_images': '../../train_images/images/',
+    'train_info':   '../../train_images/annotations/annotation_train.json',
 
     # Validation images and annotations.
-    'valid_images': './data/coco/images/',
-    'valid_info':   'path_to_annotation_file',
+    'valid_images': '../../train_images/images/',
+    'valid_info':   '../../train_images/annotations/annotation_val.json',
 
     # Whether or not to load GT. If this is False, eval.py quantitative evaluation won't work.
     'has_gt': True,
@@ -161,18 +165,18 @@ PASCAL_CLASSES = ("aeroplane", "bicycle", "bird", "boat", "bottle",
                   "sheep", "sofa", "train", "tvmonitor")
 
 pascal_sbd_dataset = dataset_base.copy({
-    'name': 'Pascal SBD 2012',
+    'name': 'HW',
 
-    'train_images': './data/sbd/img',
-    'valid_images': './data/sbd/img',
-    
-    'train_info': './data/sbd/pascal_sbd_train.json',
-    'valid_info': './data/sbd/pascal_sbd_val.json',
+    # Training images and annotations
+    'train_images': '../train_images/images/',
+    'train_info':   '../train_images/annotations/annotation_train.json',
+
+    # Validation images and annotations.
+    'valid_images': '../train_images/images/',
+    'valid_info':   '../train_images/annotations/annotation_val.json',
 
     'class_names': PASCAL_CLASSES,
 })
-
-
 
 
 
@@ -630,8 +634,8 @@ yolact_base_config = coco_base_config.copy({
     'name': 'yolact_base',
 
     # Dataset stuff
-    'dataset': coco2017_dataset,
-    'num_classes': len(coco2017_dataset.class_names) + 1,
+    'dataset': pascal_sbd_dataset,
+    'num_classes': len(pascal_sbd_dataset.class_names) + 1,
 
     # Image Size
     'max_size': 550,
@@ -758,4 +762,4 @@ def set_cfg(config_name:str):
 def set_dataset(dataset_name:str):
     """ Sets the dataset of the current config. """
     cfg.dataset = eval(dataset_name)
-    
+

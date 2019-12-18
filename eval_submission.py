@@ -7,6 +7,7 @@ from utils import timer
 from utils.functions import SavePath
 from layers.output_utils import postprocess, undo_image_transformation
 import pycocotools
+from pycocotools.coco import COCO
 
 from data import cfg, set_cfg, set_dataset
 
@@ -28,6 +29,23 @@ from PIL import Image
 
 import matplotlib.pyplot as plt
 import cv2
+
+# +
+from itertools import groupby
+
+def binary_mask_to_rle(binary_mask):
+    rle = {'counts': [], 'size': list(binary_mask.shape)}
+    counts = rle.get('counts')
+    for i, (value, elements) in enumerate(groupby(binary_mask.ravel(order='F'))):
+        if i == 0 and value == 1:
+            counts.append(0)
+        counts.append(len(list(elements)))
+    compressed_rle = pycocotools.mask.frPyObjects(rle, rle.get('size')[0], rle.get('size')[1])
+    compressed_rle['counts'] = str(compressed_rle['counts'], encoding='utf-8')
+    return compressed_rle
+
+
+# -
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -148,7 +166,32 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
                                         crop_masks        = args.crop,
                                         score_threshold   = args.score_threshold)
         torch.cuda.synchronize()
-
+    all_pred = []
+    #print(len(t))
+    #print(type(t))
+    #print("classes")
+    #print(t[0].cpu().numpy())
+    #print(len(t[0].cpu().numpy()))
+    #print(t[1].cpu().numpy())
+    # bbox print(t[2].cpu().numpy())
+    #print(t[3].cpu().numpy())
+    # classes, scores, boxes, masks
+    
+    categories = t[0].cpu().numpy()
+    scores = t[1].cpu().numpy()
+    masks = t[3].cpu().numpy()
+    #print(masks.shape)
+    n_instances = len(scores)    #if len(categories) > 0: # If any objects are detected in this image
+    
+    for i in range(n_instances): # Loop all instances
+        # save information of the instance in a dictionary then append on all_pred list
+        pred = {}
+        #pred['image_id'] = imgid # this imgid must be same as the key of test.json
+        pred['category_id'] = int(categories[i]) + 1
+        pred['score'] = float(scores[i])
+        pred['segmentation'] = binary_mask_to_rle(masks[i,:,:]) # save binary mask to RLE, e.g. 512x512 -> rle
+        all_pred.append(pred)
+        
     with timer.env('Copy'):
         if cfg.eval_mask_branch:
             # Masks are drawn on the GPU, so don't copy
@@ -227,7 +270,7 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         cv2.putText(img_numpy, fps_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
     if num_dets_to_consider == 0:
-        return img_numpy
+        return img_numpy, all_pred
 
     if args.display_text or args.display_bboxes:
         for j in reversed(range(num_dets_to_consider)):
@@ -255,7 +298,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
             
     
-    return img_numpy
+    return img_numpy, all_pred
+
 
 def prep_benchmark(dets_out, h, w):
     with timer.env('Postprocess'):
@@ -572,7 +616,7 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
 
-    img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
+    img_numpy, all_pred = prep_display(preds, frame, None, None, undo_transform=False)
     
     if save_path is None:
         img_numpy = img_numpy[:, :, (2, 1, 0)]
@@ -583,20 +627,39 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
         plt.show()
     else:
         cv2.imwrite(save_path, img_numpy)
+        
+    return all_pred
 
 def evalimages(net:Yolact, input_folder:str, output_folder:str):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
 
     print()
-    for p in Path(input_folder).glob('*'): 
-        path = str(p)
+    from pycocotools.coco import COCO
+    cocoGt = COCO("test.json")
+    
+    coco_dt = []
+#     for p in Path(input_folder).glob('*'): 
+#         path = str(p)
+#         print("Here" + path)
+#         name = os.path.basename(path)
+#         name = '.'.join(name.split('.')[:-1]) + '.png'
+#         out_path = os.path.join(output_folder, name)
+    for imgid in cocoGt.imgs:
+        path = "../test_images/" + cocoGt.loadImgs(ids=imgid)[0]['file_name']
         name = os.path.basename(path)
         name = '.'.join(name.split('.')[:-1]) + '.png'
         out_path = os.path.join(output_folder, name)
+        print(path)
 
-        evalimage(net, path, out_path)
+        all_pred = evalimage(net, path, out_path)
+        for i in range(len(all_pred)):
+            all_pred[i]['image_id'] = imgid # this imgid must be same as the key of test.json
+            coco_dt.append(all_pred[i])
         print(path + ' -> ' + out_path)
+        
+    with open("submission.json", "w") as f:
+        json.dump(coco_dt, f)
     print('Done.')
 
 from multiprocessing.pool import ThreadPool
@@ -1075,7 +1138,7 @@ if __name__ == '__main__':
 
         if args.cuda:
             net = net.cuda()
-
+        
         evaluate(net, dataset)
 
 
